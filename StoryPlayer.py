@@ -26,13 +26,28 @@ class StoryPlayer(MusicPlayer):
         logger.debug('StoryPlayer play')
         path = self.playlist[self.idx]
         logger.info(f'目前正在播放：{self.playlist[self.idx]}')
+        self.plugin.say(f'{self.get_song_name()}', cache=True, wait=True)
         super(MusicPlayer, self).stop()
         super(MusicPlayer, self).play(path, False, self.next)
+        # save play status
+        self.save_playstatus()
 
     def next(self):
         logger.debug('StoryPlayer next')
         super(MusicPlayer, self).stop()
         self.idx = (self.idx+1) % len(self.playlist)
+        self.play()
+    
+    def prev(self):
+        logger.debug('StoryPlayer prev')
+        super(MusicPlayer, self).stop()
+        self.idx = (self.idx-1) % len(self.playlist)
+        self.play()
+
+    def first(self):
+        logger.debug('StoryPlayer play first')
+        super(MusicPlayer, self).stop()
+        self.idx = 0
         self.play()
 
     def resume(self):
@@ -42,12 +57,12 @@ class StoryPlayer(MusicPlayer):
     def pause(self):
         logger.debug('StoryPlayer pause')
         super().pause()
-        self.save_playstatus()
+        #self.save_playstatus()
     
     def stop(self):
         logger.debug('StoryPlayer stop')
         super().stop()
-        self.save_playstatus()
+        #self.save_playstatus()
     
     def update_playlist(self, album, playlist):
         super(MusicPlayer, self).stop()
@@ -56,7 +71,9 @@ class StoryPlayer(MusicPlayer):
         self.idx = self.get_playstatus()
         # check if continue
         if self.idx:
-            self.plugin.say(f'继续播放{album}: {self.get_song_name()}', wait=True)
+            self.plugin.say(f'继续播放{album}', cache=True, wait=True)
+        else:
+            self.plugin.say(f'马上为您播放{album}', cache=True, wait=True)
         self.play()
     
     def get_playstatus(self):
@@ -88,12 +105,12 @@ class Plugin(AbstractPlugin):
         self.index_path = os.path.join(constants.DATA_PATH, 'story', 'index.json')
         self.song_index = json.loads(utils.get_file_content(self.index_path))
         self.song_list = None
-        self.album_data = None       
+        self.album_data = None
 
     def get_song_list(self, text):
         logger.info(f"检索内容：{text}")
         for i in self.song_index:
-            if text in i["name"] or text in i["origin_name"] or any(text in x or x in text for x in i["keys"]):
+            if text in i["name"] or text in i["origin_name"] or any(text in x for x in i["keys"]):
                 logger.info(f"找到故事：{i['name']}, 路径：{i['path']}")
                 self.album_data = i
                 return [os.path.join(i["path"], song) for song in i["list"]]
@@ -110,8 +127,8 @@ class Plugin(AbstractPlugin):
             #logger.info(self.song_list)
             if len(self.song_list) == 0:
                 self.clearImmersive()  # 去掉沉浸式
-                self.say(f'没有找到{text}相关资源，播放失败')
-                return                
+                self.say(f'没有找到{text}相关资源，播放失败', cache=True)
+                return
             self.player.update_playlist(self.album_data['name'], self.song_list)
             #self.player.play()
         elif self.nlu.hasIntent(parsed, 'MUSICRANK'):
@@ -120,6 +137,8 @@ class Plugin(AbstractPlugin):
             self.player.next()
         elif self.nlu.hasIntent(parsed, 'CHANGE_TO_LAST'):
             self.player.prev()
+        elif self.nlu.hasIntent(parsed, 'RESTART_MUSIC'):
+            self.player.first()
         elif self.nlu.hasIntent(parsed, 'CHANGE_VOL'):
             slots = self.nlu.getSlots(parsed, 'CHANGE_VOL')
             for slot in slots:
@@ -145,7 +164,7 @@ class Plugin(AbstractPlugin):
             self.player.stop()
             self.clearImmersive()  # 去掉沉浸式
         else:
-            self.say('没听懂你的意思呢，要停止播放，请说停止播放', wait=True)
+            self.say('没听懂你的意思呢，要停止播放，请说停止播放', cache=True, wait=True)
             self.player.resume()
 
     def pause(self):
