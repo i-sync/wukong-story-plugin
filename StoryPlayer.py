@@ -16,9 +16,10 @@ class MPlayer(AbstractPlayer):
 
     def __init__(self, **kwargs):
         super(MPlayer, self).__init__(**kwargs)
-
+        self.EOFArgs = "-msglevel global=6"
         self.playing = False
-        self.player = mplayer.Player()
+        self.player = mplayer.Player(args=self.EOFArgs.split())
+        self.player.stdout.connect(self.handle_player_output)
         self.onCompleteds = []
 
     def play(self, src, time_pos, onCompleted=None):
@@ -27,22 +28,28 @@ class MPlayer(AbstractPlayer):
                 self.onCompleteds.append(onCompleted)
 
             if not self.player.is_alive():
-                self.player = mplayer.Player()
+                self.player = mplayer.Player(args=self.EOFArgs.split())
+                self.player.stdout.connect(self.handle_player_output)
 
             self.player.loadfile(src)
             self.player.time_pos = time_pos
             self.playing = True
+
+            # waiting for play completed.
             while True:
-                if not self.player.length:
+                if not self.playing:
                     break
-                time.sleep(1)
-            self.playing = False
+                time.sleep(0.5)
 
             for onCompleted in self.onCompleteds:
                 if onCompleted is not None:
                     onCompleted()
         else:
             logging.critical(f'file path not exists: {src}')
+
+    def handle_player_output(self, line):
+        if line.startswith('EOF code:'):
+            self.playing = False
 
     def appendOnCompleted(self, onCompleted):
         if onCompleted is not None:
