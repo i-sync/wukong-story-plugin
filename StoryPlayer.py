@@ -111,26 +111,26 @@ class StoryPlayer(MPlayer):
         path = self.playlist[self.idx]
         logger.info(f'目前正在播放：{self.playlist[self.idx]}')
         self.plugin.say(f'{self.get_song_name()}', cache=True, wait=True)
-        super(MPlayer, self).stop()
-        super(MPlayer, self).play(path, time_pos, self.next)
+        super().stop()
+        super().play(path, time_pos, self.next)
         # save play status
         self.save_playstatus()
 
     def next(self):
         logger.debug('StoryPlayer next')
-        super(MPlayer, self).stop()
+        super().stop()
         self.idx = (self.idx+1) % len(self.playlist)
         self.play()
     
     def prev(self):
         logger.debug('StoryPlayer prev')
-        super(MPlayer, self).stop()
+        super().stop()
         self.idx = (self.idx-1) % len(self.playlist)
         self.play()
 
     def first(self):
         logger.debug('StoryPlayer play first')
-        super(MPlayer, self).stop()
+        super().stop()
         self.idx = 0
         self.play()
 
@@ -149,7 +149,7 @@ class StoryPlayer(MPlayer):
         self.save_playstatus()
     
     def update_playlist(self, album, playlist):
-        super(MPlayer, self).stop()
+        super().stop()
         self.album = album
         self.playlist = playlist
         time_pos = 0
@@ -157,9 +157,9 @@ class StoryPlayer(MPlayer):
         # check if continue
         if self.status and (self.status['idx'] or self.status['time_pos']):
             time_pos= self.status['time_pos']
-            self.plugin.say(f'继续播放{album}', cache=True, wait=True)
+            self.plugin.say(f'继续播放:{album}', cache=True, wait=True)
         else:
-            self.plugin.say(f'马上为您播放{album}', cache=True, wait=True)
+            self.plugin.say(f'马上为您播放:{album}', cache=True, wait=True)
 
         self.play(time_pos)
     
@@ -208,7 +208,7 @@ class Plugin(AbstractPlugin):
         super(Plugin, self).__init__(con)
         self.player = None
         self.index_path = os.path.join(constants.DATA_PATH, 'story', 'index.json')
-        self.song_index = json.loads(utils.get_file_content(self.index_path))
+        self.song_index = None
         self.song_list = None
         self.album_data = None
 
@@ -225,6 +225,14 @@ class Plugin(AbstractPlugin):
         if not self.player:
             self.player = StoryPlayer(None, self)
         
+        # check index file.
+        if not self.song_index:
+            if not os.path.exists(self.index_path):
+                logging.info('索引文件不存在,请先更新索引')
+                self.say('索引文件不存在,请先更新索引', cache=True)
+            else:
+                self.song_index = json.loads(utils.get_file_content(self.index_path))
+
         if '播放' in text:
             input = re.sub(r'[^\w\u4e00-\u9fa5]+', '', text)
             input = re.sub(r".*播放", '', input)
