@@ -44,7 +44,7 @@ class MPlayer(AbstractPlayer):
         logger.debug(f'mplayer stdout: {line}')
         if line.startswith('EOF code: 1'): # 正常播放完成， 如果直接加载其它文件状态：EOF code: 2.
             self.playing = False
-            
+
             # exec next play
             logger.debug(f"play completed, exec next play.")
             """
