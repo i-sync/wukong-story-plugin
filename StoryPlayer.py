@@ -4,6 +4,8 @@ import re
 import json
 import time
 import mplayer
+import platform
+import subprocess
 from robot import utils, config, logging, constants
 from robot.Player import AbstractPlayer
 from robot.sdk.AbstractPlugin import AbstractPlugin
@@ -20,6 +22,7 @@ class MPlayer(AbstractPlayer):
         self.playing = False
         self.player = mplayer.Player(args=self.EOFArgs.split())
         self.player.stdout.connect(self.handle_player_output)
+        logger.debug(f'Init MPlayer, {self.player}')
         self.onCompleteds = []
 
     def play(self, src, time_pos, onCompleted=None):
@@ -34,22 +37,24 @@ class MPlayer(AbstractPlayer):
             self.player.loadfile(src)
             self.player.time_pos = time_pos
             self.playing = True
+        else:
+            logger.critical(f'file path not exists: {src}')
 
-            # waiting for play completed.
-            while True:
-                if not self.playing:
-                    break
-                time.sleep(0.5)
-
+    def handle_player_output(self, line):
+        logger.debug(f'mplayer stdout: {line}')
+        if line.startswith('EOF code: 1'): # 正常播放完成， 如果直接加载其它文件状态：EOF code: 2.
+            self.playing = False
+            
+            # exec next play
+            logger.debug(f"play completed, exec next play.")
+            """
             for onCompleted in self.onCompleteds:
                 if onCompleted is not None:
                     onCompleted()
-        else:
-            logging.critical(f'file path not exists: {src}')
-
-    def handle_player_output(self, line):
-        if line.startswith('EOF code:'):
-            self.playing = False
+            """
+            # fix always loop.
+            if self.onCompleteds and len(self.onCompleteds):
+                self.onCompleteds[0]()
 
     def appendOnCompleted(self, onCompleted):
         if onCompleted is not None:
@@ -65,7 +70,7 @@ class MPlayer(AbstractPlayer):
             self.player.quit()
 
     def pause(self):
-        if not self.player.paused:
+        if self.player.filename and not self.player.paused:
             self.player.pause()
 
     def resume(self):
@@ -74,9 +79,6 @@ class MPlayer(AbstractPlayer):
 
     def is_playing(self):
         return self.playing
-
-    def is_pausing(self):
-        return self.player.paused
 
     @property
     def time_pos(self):
@@ -135,8 +137,8 @@ class StoryPlayer(MPlayer):
         self.play()
 
     def resume(self):
+        logger.debug('StoryPlayer resume')
         super().resume()
-        self.onCompleteds = [self.next]
     
     def pause(self):
         logger.debug('StoryPlayer pause')
@@ -156,20 +158,37 @@ class StoryPlayer(MPlayer):
         self.status = self.get_playstatus()
         # check if continue
         if self.status and (self.status['idx'] or self.status['time_pos']):
+            self.idx = self.status['idx']
             time_pos= self.status['time_pos']
             self.plugin.say(f'继续播放:{album}', cache=True, wait=True)
         else:
+            self.idx = 0
             self.plugin.say(f'马上为您播放:{album}', cache=True, wait=True)
 
         self.play(time_pos)
     
     def get_playstatus(self):
+        """
+        Read Last Play Status
+        """
         tmp_status_path = os.path.join(self.status_path, f'{self.album}.json')
         if not os.path.exists(tmp_status_path):
             return None
-        return json.loads(utils.get_file_content(tmp_status_path))
+
+        # check file content if is none
+        file_content = utils.get_file_content(tmp_status_path)
+        if not file_content:
+            return None
+        return json.loads(file_content)
 
     def save_playstatus(self):
+        """
+        Save Current Play Status
+        """
+        # skip when album is none
+        if not self.album:
+            return
+
         tmp_status_path = os.path.join(self.status_path, f'{self.album}.json')
         if os.path.exists(tmp_status_path):
             os.remove(tmp_status_path)
@@ -183,22 +202,56 @@ class StoryPlayer(MPlayer):
         return re.sub(r"\.mp3|\.m4a|\.wav", "", name)
 
     def turn_up(self):
-        volume = self.volume
-        volume += 10
-        if volume >= 100:
-            volume = 100
-            self.plugin.say('音量已经最大啦', wait=True)
-        self.volume = volume
+        system = platform.system()
+        if system == 'Darwin':
+            res = subprocess.run(['osascript', '-e', 'output volume of (get volume settings)'], shell=False, capture_output=True, universal_newlines=True)
+            volume = int(res.stdout.strip())
+            volume += 10
+            if volume >= 100:
+                volume = 100
+                self.plugin.say('音量已经最大啦', wait=True)
+            subprocess.run(['osascript', '-e', 'set volume output volume {}'.format(volume)])
+        elif system == 'Linux':
+            res = subprocess.run(["amixer sget Master | grep 'Mono:' | awk -F'[][]' '{ print $2 }'"], shell=True, capture_output=True, universal_newlines=True)
+            print(res.stdout)
+            if res.stdout != '' and res.stdout.strip().endswith('%'):
+                volume = int(res.stdout.strip().replace('%', ''))
+                volume += 10
+                if volume >= 100:
+                    volume = 100
+                    self.plugin.say('音量已经最大啦', wait=True)
+                subprocess.run(['amixer', 'set', 'Master', '{}%'.format(volume)])
+            else:
+                subprocess.run(['amixer', 'set', 'Master', '10%+'])
+        else:
+            self.plugin.say('当前系统不支持调节音量', wait=True)
         self.resume()
 
     def turn_down(self):
-        volume = self.volume
-        volume -= 10
-        if volume <= 10:
-            volume = 10
-            self.plugin.say('音量已经最小啦', wait=True)
-        self.volume = volume
+        system = platform.system()
+        if system == 'Darwin':
+            res = subprocess.run(['osascript', '-e', 'output volume of (get volume settings)'], shell=False, capture_output=True, universal_newlines=True)
+            volume = int(res.stdout.strip())
+            volume -= 10
+            if volume <= 10:
+                volume = 10
+                self.plugin.say('音量已经很小啦', wait=True)
+            subprocess.run(['osascript', '-e', 'set volume output volume {}'.format(volume)])
+        elif system == 'Linux':
+            res = subprocess.run(["amixer sget Master | grep 'Mono:' | awk -F'[][]' '{ print $2 }'"], shell=True, capture_output=True, universal_newlines=True)
+            if res.stdout != '' and res.stdout.endswith('%'):
+                volume = int(res.stdout.replace('%', '').strip())
+                volume -= 10
+                if volume <= 10:
+                    volume = 10
+                    self.plugin.say('音量已经最小啦', wait=True)
+                subprocess.run(['amixer', 'set', 'Master', '{}%'.format(volume)])
+            else:
+                subprocess.run(['amixer', 'set', 'Master', '10%-'])
+        else:
+            self.plugin.say('当前系统不支持调节音量', wait=True)
         self.resume()
+
 
 class Plugin(AbstractPlugin):
 
@@ -228,8 +281,10 @@ class Plugin(AbstractPlugin):
         # check index file.
         if not self.song_index:
             if not os.path.exists(self.index_path):
-                logging.info('索引文件不存在,请先更新索引')
-                self.say('索引文件不存在,请先更新索引', cache=True)
+                self.clearImmersive()  # 去掉沉浸式
+                logger.info('索引文件不存在,请先更新索引')
+                self.say('索引文件不存在,请先更新索引', cache=True, wait=True)
+                return
             else:
                 self.song_index = json.loads(utils.get_file_content(self.index_path))
 
@@ -282,10 +337,10 @@ class Plugin(AbstractPlugin):
 
     def pause(self):
         if self.player:
-            self.player.stop()
+            self.player.pause()
 
     def restore(self):
-        if self.player and not self.player.is_pausing():
+        if self.player: # and not self.player.is_pausing():
             self.player.resume()
 
     def isValidImmersive(self, text, parsed):
