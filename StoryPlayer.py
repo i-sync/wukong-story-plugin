@@ -267,6 +267,13 @@ class Plugin(AbstractPlugin):
 
     def get_song_list(self, text):
         logger.info(f"检索内容：{text}")
+        #严格匹配
+        for i in self.song_index:
+            if text == i["name"]
+                logger.info(f"找到故事：{i['name']}, 路径：{i['path']}")
+                self.album_data = i
+                return [os.path.join(i["path"], song) for song in i["list"]]
+        #模糊匹配
         for i in self.song_index:
             if text in i["name"] or text in i["origin_name"] or any(text in x for x in i["keys"]):
                 logger.info(f"找到故事：{i['name']}, 路径：{i['path']}")
