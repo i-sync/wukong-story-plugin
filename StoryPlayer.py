@@ -34,6 +34,7 @@ class MPlayer(AbstractPlayer):
                 self.player = mplayer.Player(args=self.EOFArgs.split())
                 self.player.stdout.connect(self.handle_player_output)
 
+            logger.debug(f'mplayer play time_pos: {time_pos}')
             self.player.loadfile(src)
             self.player.time_pos = time_pos
             self.playing = True
@@ -41,7 +42,7 @@ class MPlayer(AbstractPlayer):
             logger.critical(f'file path not exists: {src}')
 
     def handle_player_output(self, line):
-        logger.debug(f'mplayer stdout: {line}')
+        #logger.debug(f'mplayer stdout: {line}')
         if line.startswith('EOF code: 1'): # 正常播放完成， 如果直接加载其它文件状态：EOF code: 2.
             self.playing = False
 
@@ -61,16 +62,17 @@ class MPlayer(AbstractPlayer):
             self.onCompleteds.append(onCompleted)
 
     def stop(self):
-        #if self.player.is_alive():
-        #    self.player.quit()
-        self.pause()
+        if self.player.is_alive():
+            self.player.stop()
 
     def quit(self):
         if self.player.is_alive():
             self.player.quit()
 
     def pause(self):
+        logger.debug(f'call MPlayer pause. filename:{self.player.filename}, status: {self.player.paused}')
         if self.player.filename and not self.player.paused:
+            logger.debug(f'MPlayer is running: {self.player.filename} , status: { self.player.paused}, paused...')
             self.player.pause()
 
     def resume(self):
@@ -87,10 +89,6 @@ class MPlayer(AbstractPlayer):
     @property
     def speed(self):
         return self.player.speed
-
-    @property
-    def volume(self):
-        return self.player.volume
 
 """
 给故事播放器插件使用的，
@@ -115,24 +113,19 @@ class StoryPlayer(MPlayer):
         self.plugin.say(f'{self.get_song_name()}', cache=True, wait=True)
         super().stop()
         super().play(path, time_pos, self.next)
-        # save play status
-        self.save_playstatus()
 
     def next(self):
         logger.debug('StoryPlayer next')
-        super().stop()
         self.idx = (self.idx+1) % len(self.playlist)
         self.play()
     
     def prev(self):
         logger.debug('StoryPlayer prev')
-        super().stop()
         self.idx = (self.idx-1) % len(self.playlist)
         self.play()
 
     def first(self):
         logger.debug('StoryPlayer play first')
-        super().stop()
         self.idx = 0
         self.play()
 
@@ -143,15 +136,12 @@ class StoryPlayer(MPlayer):
     def pause(self):
         logger.debug('StoryPlayer pause')
         super().pause()
-        self.save_playstatus()
     
     def stop(self):
         logger.debug('StoryPlayer stop')
         super().stop()
-        self.save_playstatus()
     
     def update_playlist(self, album, playlist):
-        super().stop()
         self.album = album
         self.playlist = playlist
         time_pos = 0
@@ -160,6 +150,7 @@ class StoryPlayer(MPlayer):
         if self.status and (self.status['idx'] or self.status['time_pos']):
             self.idx = self.status['idx']
             time_pos= self.status['time_pos']
+            logger.debug(f'from file read playlist time_pos: {time_pos}')
             self.plugin.say(f'继续播放:{album}', cache=True, wait=True)
         else:
             self.idx = 0
@@ -186,14 +177,15 @@ class StoryPlayer(MPlayer):
         Save Current Play Status
         """
         # skip when album is none
-        if not self.album:
+        if not self.album or not self.time_pos:
             return
 
         tmp_status_path = os.path.join(self.status_path, f'{self.album}.json')
         if os.path.exists(tmp_status_path):
             os.remove(tmp_status_path)
+        logger.debug(f'save play time pos: {self.time_pos}')
         with open(tmp_status_path, 'w+', encoding='utf-8') as f:
-            f.write(json.dumps({'idx': self.idx, 'time_pos': self.time_pos if self.time_pos else 0}))
+            f.write(json.dumps({'idx': self.idx, 'time_pos': self.time_pos}))
     
     def get_song_name(self):
         path = self.playlist[self.idx]
@@ -269,7 +261,7 @@ class Plugin(AbstractPlugin):
         logger.info(f"检索内容：{text}")
         #严格匹配
         for i in self.song_index:
-            if text == i["name"]
+            if text == i["name"]:
                 logger.info(f"找到故事：{i['name']}, 路径：{i['path']}")
                 self.album_data = i
                 return [os.path.join(i["path"], song) for song in i["list"]]
@@ -306,8 +298,8 @@ class Plugin(AbstractPlugin):
                 return
             self.player.update_playlist(self.album_data['name'], self.song_list)
             #self.player.play()
-        elif self.nlu.hasIntent(parsed, 'MUSICRANK'):
-            self.player.play()
+        #elif self.nlu.hasIntent(parsed, 'MUSICRANK'):
+        #    self.player.play()
         elif self.nlu.hasIntent(parsed, 'CHANGE_TO_NEXT'):
             self.player.next()
         elif self.nlu.hasIntent(parsed, 'CHANGE_TO_LAST'):
@@ -344,7 +336,10 @@ class Plugin(AbstractPlugin):
 
     def pause(self):
         if self.player:
+            logger.debug("plugin interrupted pause.")
             self.player.pause()
+            # save player status
+            self.player.save_playstatus()
 
     def restore(self):
         if self.player: # and not self.player.is_pausing():
