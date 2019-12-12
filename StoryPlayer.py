@@ -55,7 +55,7 @@ class MPlayer(AbstractPlayer):
             """
             # fix always loop.
             if self.onCompleteds and len(self.onCompleteds):
-                self.onCompleteds[0]()
+                self.onCompleteds.pop(0)()
 
     def appendOnCompleted(self, onCompleted):
         if onCompleted is not None:
@@ -110,7 +110,7 @@ class StoryPlayer(MPlayer):
         logger.debug('StoryPlayer play')
         path = self.playlist[self.idx]
         logger.info(f'目前正在播放：{self.playlist[self.idx]}')
-        self.plugin.say(f'{self.get_song_name()}', cache=True, wait=True)
+        self.plugin.say(f'{self.get_song_name()}', wait=True)
         super().stop()
         super().play(path, time_pos, self.next)
 
@@ -280,21 +280,21 @@ class Plugin(AbstractPlugin):
         # check index file.
         if not self.song_index:
             if not os.path.exists(self.index_path):
-                self.clearImmersive()  # 去掉沉浸式
                 logger.info('索引文件不存在,请先更新索引')
                 self.say('索引文件不存在,请先更新索引', cache=True, wait=True)
+                self.clearImmersive()  # 去掉沉浸式
                 return
             else:
                 self.song_index = json.loads(utils.get_file_content(self.index_path))
 
         if '播放' in text:
-            input = re.sub(r'[^\w\u4e00-\u9fa5]+', '', text)
-            input = re.sub(r".*播放", '', input)
-            self.song_list = self.get_song_list(input)
+            input_text = re.sub(r'[^\w\u4e00-\u9fa5]+', '', text)
+            input_text = re.sub(r".*播放", '', input_text)
+            self.song_list = self.get_song_list(input_text)
             #logger.info(self.song_list)
             if len(self.song_list) == 0:
+                self.say(f'没有找到{input_text}相关资源，播放失败', cache=True, wait=True)
                 self.clearImmersive()  # 去掉沉浸式
-                self.say(f'没有找到{text}相关资源，播放失败', cache=True)
                 return
             self.player.update_playlist(self.album_data['name'], self.song_list)
             #self.player.play()
