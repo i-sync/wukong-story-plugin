@@ -36,7 +36,8 @@ class MPlayer(AbstractPlayer):
 
             logger.debug(f'mplayer play time_pos: {time_pos}')
             self.player.loadfile(src)
-            self.player.time_pos = time_pos
+            if time_pos:
+                self.player.time_pos = time_pos
             self.playing = True
         else:
             logger.critical(f'file path not exists: {src}')
@@ -60,24 +61,6 @@ class MPlayer(AbstractPlayer):
     def appendOnCompleted(self, onCompleted):
         if onCompleted is not None:
             self.onCompleteds.append(onCompleted)
-
-    def stop(self):
-        if self.player.is_alive():
-            self.player.stop()
-
-    def quit(self):
-        if self.player.is_alive():
-            self.player.quit()
-
-    def pause(self):
-        logger.debug(f'call MPlayer pause. filename:{self.player.filename}, status: {self.player.paused}')
-        if self.player.filename and not self.player.paused:
-            logger.debug(f'MPlayer is running: {self.player.filename} , status: { self.player.paused}, paused...')
-            self.player.pause()
-
-    def resume(self):
-        if self.player.paused:
-            self.player.pause()
 
     def is_playing(self):
         return self.playing
@@ -103,6 +86,7 @@ class StoryPlayer(MPlayer):
         self.album = None
         self.playlist = playlist
         self.plugin = plugin
+        self.pausing = False
         self.idx = 0
         self.status_path = os.path.join(constants.DATA_PATH, 'story')
 
@@ -111,18 +95,26 @@ class StoryPlayer(MPlayer):
         path = self.playlist[self.idx]
         logger.info(f'目前正在播放：{self.playlist[self.idx]}')
         self.plugin.say(f'{self.get_song_name()}', wait=True)
-        super().stop()
         super().play(path, time_pos, self.next)
 
     def next(self):
         logger.debug('StoryPlayer next')
-        self.idx = (self.idx+1) % len(self.playlist)
-        self.play()
+        self.idx += 1
+        if self.idx >= len(self.playlist):
+            self.idx -= 1
+            self.plugin.say(f'当前已经是最后一集了' if self.playing else f'{self.album} 已经全部播放完毕, 请试试其它内容', wait = True)
+        else:
+            self.play()
     
     def prev(self):
         logger.debug('StoryPlayer prev')
-        self.idx = (self.idx-1) % len(self.playlist)
-        self.play()
+        self.idx -= 1 # (self.idx-1) % len(self.playlist)
+        if self.idx < 0:
+            self.idx = 0
+            logger.info(f'当前已经是第一集了')
+            self.plugin.say(f'当前已经是第一集了', wait = True)
+        else:
+            self.play()
 
     def first(self):
         logger.debug('StoryPlayer play first')
@@ -131,15 +123,26 @@ class StoryPlayer(MPlayer):
 
     def resume(self):
         logger.debug('StoryPlayer resume')
-        super().resume()
+        if self.player.paused:
+            self.player.pause()
     
     def pause(self):
         logger.debug('StoryPlayer pause')
-        super().pause()
+        if self.player.filename and not self.player.paused:
+            logger.debug(f'MPlayer is running: {self.player.filename} , pause status: { self.player.paused}, paused...')
+            self.player.pause()
+            #save play status
+            self.save_playstatus()
     
     def stop(self):
         logger.debug('StoryPlayer stop')
-        super().stop()
+        if self.player.is_alive():
+            self.player.stop()
+
+    def quit(self):
+        logger.debug('StoryPlayer quit')
+        if self.player.is_alive():
+            self.player.quit()
     
     def update_playlist(self, album, playlist):
         self.album = album
@@ -297,9 +300,6 @@ class Plugin(AbstractPlugin):
                 self.clearImmersive()  # 去掉沉浸式
                 return
             self.player.update_playlist(self.album_data['name'], self.song_list)
-            #self.player.play()
-        #elif self.nlu.hasIntent(parsed, 'MUSICRANK'):
-        #    self.player.play()
         elif self.nlu.hasIntent(parsed, 'CHANGE_TO_NEXT'):
             self.player.next()
         elif self.nlu.hasIntent(parsed, 'CHANGE_TO_LAST'):
@@ -325,24 +325,24 @@ class Plugin(AbstractPlugin):
 
         elif self.nlu.hasIntent(parsed, 'PAUSE'):
             self.player.pause()
+            self.player.pausing = True
         elif self.nlu.hasIntent(parsed, 'CONTINUE'):
             self.player.resume()
+            self.player.pausing = False
         elif self.nlu.hasIntent(parsed, 'CLOSE_MUSIC'):
             self.player.stop()
             self.clearImmersive()  # 去掉沉浸式
         else:
             self.say('没听懂你的意思呢，要停止播放，请说停止播放', cache=True, wait=True)
+            self.player.pausing = False
             self.player.resume()
 
     def pause(self):
         if self.player:
-            logger.debug("plugin interrupted pause.")
             self.player.pause()
-            # save player status
-            self.player.save_playstatus()
 
     def restore(self):
-        if self.player: # and not self.player.is_pausing():
+        if self.player and not self.player.pausing:
             self.player.resume()
 
     def isValidImmersive(self, text, parsed):
