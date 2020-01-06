@@ -103,6 +103,10 @@ class StoryPlayer(MPlayer):
         if self.idx >= len(self.playlist):
             self.idx -= 1
             self.plugin.say(f'当前已经是最后一集了' if self.playing else f'{self.album} 已经全部播放完毕, 请试试其它内容', wait = True)
+
+            # remove play status when album play completed.
+            if not self.playing:
+                self.remove_playstatus()
         else:
             self.play()
     
@@ -190,6 +194,18 @@ class StoryPlayer(MPlayer):
         with open(tmp_status_path, 'w+', encoding='utf-8') as f:
             f.write(json.dumps({'idx': self.idx, 'time_pos': self.time_pos}))
     
+    def remove_playstatus(self):
+        """
+        remove play status when album play completed 
+        """
+        # skip when album is none
+        if not self.album:
+            return
+
+        tmp_status_path = os.path.join(self.status_path, f'{self.album}.json')
+        if os.path.exists(tmp_status_path):
+            os.remove(tmp_status_path)
+
     def get_song_name(self):
         path = self.playlist[self.idx]
         name = path.split('/')[-1]
