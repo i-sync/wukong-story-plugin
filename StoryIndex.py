@@ -21,11 +21,13 @@ class Plugin(AbstractPlugin):
             os.mkdir(index_path)
         self.index_file = os.path.join(index_path, 'index.json')
         self.content_file = os.path.join(index_path, 'content.json')
+        self.name_index_file = os.path.join(index_path, 'name_index.txt')
 
     def build_index(self):
         # remove before rebuild
         utils.check_and_delete(self.index_file)
         utils.check_and_delete(self.content_file)
+        utils.check_and_delete(self.name_index_file)
 
         res = []
         content = []
@@ -44,6 +46,10 @@ class Plugin(AbstractPlugin):
                 f.write(json.dumps(res, ensure_ascii=False))
             with open(self.content_file, 'w+', encoding='utf-8') as f:
                 f.write(json.dumps(content, ensure_ascii=False))
+            with open(self.name_index_file, 'w+', encoding='utf-8') as f:
+                for obj in content:
+                    f.write(f"{obj['name']}\n")
+
 
     def handle(self, text, parsed):
         if not os.path.exists(self.music_path):
