@@ -125,6 +125,19 @@ class StoryPlayer(MPlayer):
         self.idx = 0
         self.play()
 
+    def last(self):
+        logger.debug('StoryPlayer play first')
+        self.idx = len(self.playlist) - 1
+        self.play()
+
+    def change_to(self, num):
+        logger.debug(f'StoryPlay change to {num}')
+        if num < 1 or num > len(self.playlist):
+            self.plugin.say(f'超出当前列表范围, 请重试', wait = True)
+        else:
+            self.idx = num - 1
+            self.play()
+
     def resume(self):
         logger.debug('StoryPlayer resume')
         if self.player.paused:
@@ -263,6 +276,15 @@ class StoryPlayer(MPlayer):
             self.plugin.say('当前系统不支持调节音量', wait=True)
         self.resume()
 
+    def turn_to(self, volume):
+        system = platform.system()
+        if system == 'Darwin':
+            subprocess.run(['osascript', '-e', 'set volume output volume {}'.format(volume*10)])
+        elif system == 'Linux':
+            subprocess.run(['amixer', 'set', 'Master', '{}%'.format(volume*10)])
+        else:
+            self.plugin.say('当前系统不支持调节音量', wait=True)
+        self.resume()
 
 class Plugin(AbstractPlugin):
 
@@ -270,7 +292,7 @@ class Plugin(AbstractPlugin):
 
     def __init__(self, con):
         super(Plugin, self).__init__(con)
-        self.player = None
+        self.player = StoryPlayer(None, self)
         self.index_path = os.path.join(constants.DATA_PATH, 'story', 'index.json')
         self.song_index = None
         self.song_list = None
@@ -293,8 +315,8 @@ class Plugin(AbstractPlugin):
         return []
 
     def handle(self, text, parsed):  
-        if not self.player:
-            self.player = StoryPlayer(None, self)
+        #if not self.player:
+        #   self.player = StoryPlayer(None, self)
         
         # check index file.
         if not self.song_index:
@@ -318,27 +340,22 @@ class Plugin(AbstractPlugin):
             self.player.update_playlist(self.album_data['name'], self.song_list)
         elif self.nlu.hasIntent(parsed, 'CHANGE_TO_NEXT'):
             self.player.next()
-        elif self.nlu.hasIntent(parsed, 'CHANGE_TO_LAST'):
+        elif self.nlu.hasIntent(parsed, 'CHANGE_TO_PREV'):
             self.player.prev()
-        elif self.nlu.hasIntent(parsed, 'RESTART_MUSIC'):
+        elif self.nlu.hasIntent(parsed, 'CHANGE_TO_FIRST'):
             self.player.first()
-        elif self.nlu.hasIntent(parsed, 'CHANGE_VOL'):
-            slots = self.nlu.getSlots(parsed, 'CHANGE_VOL')
-            for slot in slots:
-                if slot['name'] == 'user_d':
-                    word = self.nlu.getSlotWords(parsed, 'CHANGE_VOL', 'user_d')[0]
-                    if word == '--HIGHER--':
-                        self.player.turn_up()
-                    else:
-                        self.player.turn_down()
-                    return
-                elif slot['name'] == 'user_vd':
-                    word = self.nlu.getSlotWords(parsed, 'CHANGE_VOL', 'user_vd')[0]
-                    if word == '--LOUDER--':
-                        self.player.turn_up()
-                    else:
-                        self.player.turn_down()
-
+        elif self.nlu.hasIntent(parsed, 'CHANGE_TO_LAST'):
+            self.player.last()
+        elif self.nlu.hasIntent(parsed, 'CHANGE_TO'):
+            word = self.nlu.getSlotWords(parsed, 'CHANGE_TO', 'user_story_index')[0]
+            self.player.change_to(int(float(word)))
+        elif self.nlu.hasIntent(parsed, 'CHANGE_VOL_UP'):
+            self.player.turn_up()
+        elif self.nlu.hasIntent(parsed, 'CHANGE_VOL_DOWN'):
+            self.player.turn_down()
+        elif self.nlu.hasIntent(parsed, 'CHANGE_VOL_TO'):
+            word = self.nlu.getSlotWords(parsed, 'CHANGE_VOL_TO', 'user_vol_num')[0]
+            self.player.turn_to(int(word))
         elif self.nlu.hasIntent(parsed, 'PAUSE'):
             self.player.pause()
             self.player.pausing = True
@@ -362,7 +379,7 @@ class Plugin(AbstractPlugin):
             self.player.resume()
 
     def isValidImmersive(self, text, parsed):
-        return any(self.nlu.hasIntent(parsed, intent) for intent in ['CHANGE_TO_LAST', 'CHANGE_TO_NEXT', 'RESTART_MUSIC', 'CHANGE_VOL', 'CLOSE_MUSIC', 'PAUSE', 'CONTINUE'])
+        return any(self.nlu.hasIntent(parsed, intent) for intent in ['CHANGE_TO_PREV', 'CHANGE_TO_NEXT', 'CHANGE_TO_FIRST', 'CHANGE_TO_LAST', 'CHANGE_TO', 'CHANGE_VOL_UP', 'CHANGE_VOL_DOWN', 'CHANGE_VOL_TO', 'CLOSE_MUSIC', 'PAUSE', 'CONTINUE'])
 
     def isValid(self, text, parsed):
         return "播放" in text
