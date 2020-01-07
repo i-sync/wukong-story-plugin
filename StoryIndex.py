@@ -21,22 +21,27 @@ class Plugin(AbstractPlugin):
             os.mkdir(index_path)
         self.index_file = os.path.join(index_path, 'index.json')
         self.content_file = os.path.join(index_path, 'content.json')
+        self.name_index_file = os.path.join(index_path, 'name_index.txt')
 
     def build_index(self):
         # remove before rebuild
         utils.check_and_delete(self.index_file)
         utils.check_and_delete(self.content_file)
+        utils.check_and_delete(self.name_index_file)
 
         res = []
         content = []
+        name_index = []
         for root, dirs, files in os.walk(self.music_path):
             #print(root)
             if len(dirs):
                 continue
             album_name = root.split('/')[-1]
             keys = [key for key in re.split(r'[^\w\u4e00-\u9fa5]+', album_name) if key]
-            res.append({'name': ''.join(keys), 'origin_name': album_name, 'keys':keys, 'path': root, 'count':len(files), 'list': sorted(files)})
-            content.append({'name': ''.join(keys), 'origin_name': album_name, 'keys':keys, 'path': root, 'count':len(files)})
+            name = ''.join(keys)
+            res.append({'name': name, 'origin_name': album_name, 'keys':keys, 'path': root, 'count':len(files), 'list': sorted(files)})
+            content.append({'name': name, 'origin_name': album_name, 'keys':keys, 'path': root, 'count':len(files)})
+            name_index.append(name)
             logger.info(content[-1])
         
         if len(res):
@@ -44,6 +49,10 @@ class Plugin(AbstractPlugin):
                 f.write(json.dumps(res, ensure_ascii=False))
             with open(self.content_file, 'w+', encoding='utf-8') as f:
                 f.write(json.dumps(content, ensure_ascii=False))
+            with open(self.name_index_file, 'w+', encoding='utf-8') as f:
+                for obj in set(name_index):
+                    f.write(f"{obj}\n")
+
 
     def handle(self, text, parsed):
         if not os.path.exists(self.music_path):
