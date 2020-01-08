@@ -277,11 +277,12 @@ class StoryPlayer(MPlayer):
         self.resume()
 
     def turn_to(self, volume):
+        logger.debug(f"Volume change to :{volume}")
         system = platform.system()
         if system == 'Darwin':
             subprocess.run(['osascript', '-e', 'set volume output volume {}'.format(volume*10)])
         elif system == 'Linux':
-            subprocess.run(['amixer', 'set', 'Master', '{}%'.format(volume*10)])
+            subprocess.run(['amixer', 'set', 'Master', f'{volume*10}%'])
         else:
             self.plugin.say('当前系统不支持调节音量', wait=True)
         self.resume()
@@ -328,15 +329,25 @@ class Plugin(AbstractPlugin):
             else:
                 self.song_index = json.loads(utils.get_file_content(self.index_path))
 
-        if '播放' in text:
+        if '播放' in text and not self.nlu.hasIntent(parsed, 'CHANGE_TO'):
             input_text = re.sub(r'[^\w\u4e00-\u9fa5]+', '', text)
             input_text = re.sub(r".*播放", '', input_text)
             self.song_list = self.get_song_list(input_text)
             #logger.info(self.song_list)
             if len(self.song_list) == 0:
-                self.say(f'没有找到{input_text}相关资源，播放失败', cache=True, wait=True)
-                self.clearImmersive()  # 去掉沉浸式
-                return
+                """
+                pausing=True: 说明已经播放过相关故事，但处于暂停状态
+                puasing=Fasle:
+                    playing=True: 说明正在播放
+                    playing=False: 说明从来没有开始播放， 去掉沉浸式。
+                """
+                if not self.player.pausing and not self.player.is_playing():
+                    self.say(f'没有找到{input_text}相关资源，播放失败', wait=True)
+                    self.clearImmersive()  # 去掉沉浸式
+                    return
+                else:
+                    self.say(f'没有找到{input_text}相关资源', wait=True)
+                    return
             self.player.update_playlist(self.album_data['name'], self.song_list)
         elif self.nlu.hasIntent(parsed, 'CHANGE_TO_NEXT'):
             self.player.next()
