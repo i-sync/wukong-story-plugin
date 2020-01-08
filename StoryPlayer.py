@@ -171,10 +171,10 @@ class StoryPlayer(MPlayer):
             self.idx = self.status['idx']
             time_pos= self.status['time_pos']
             logger.debug(f'from file read playlist time_pos: {time_pos}')
-            self.plugin.say(f'继续播放:{album}', cache=True, wait=True)
+            self.plugin.say(f'继续播放:{album}', wait=True)
         else:
             self.idx = 0
-            self.plugin.say(f'马上为您播放:{album}', cache=True, wait=True)
+            self.plugin.say(f'马上为您播放:{album}', wait=True)
 
         self.play(time_pos)
     
